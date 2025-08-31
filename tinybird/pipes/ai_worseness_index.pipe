@@ -1,0 +1,45 @@
+NODE base
+SQL >
+    %
+    WITH
+        parseDateTimeBestEffortOrNull({{ String(as_of, '') }}) AS asof_param,
+        ifNull(toDate(asof_param), today()) AS d_asof,
+        d_asof - 28 AS d_start
+    SELECT
+        day,
+        reports,
+        avg(reports)  OVER w AS mean_28d_raw,
+        stddevPop(reports) OVER w AS std_28d_raw,
+        count(reports) OVER w AS n_prior
+    FROM (
+        SELECT
+            toDate(timestamp) AS day,
+            count() AS reports
+        FROM ai_model_signals
+        WHERE
+            model = {{ String(model, 'GPT-5') }}
+            AND timestamp >= toDateTime(d_start)
+            AND timestamp <  toDateTime(d_asof) + INTERVAL 1 DAY
+        GROUP BY day
+    )
+    WINDOW w AS (ORDER BY day ROWS BETWEEN 28 PRECEDING AND 1 PRECEDING)
+    ORDER BY day
+
+NODE result
+SQL >
+    %
+    WITH
+        parseDateTimeBestEffortOrNull({{ String(as_of, '') }}) AS asof_param,
+        ifNull(toDate(asof_param), today()) AS d_asof
+    SELECT
+        day,
+        reports,
+        mean_28d_raw        AS mean_28d,
+        std_28d_raw         AS std_28d,
+        if(n_prior < 7 OR std_28d_raw = 0 OR isNull(std_28d_raw),
+           0,
+           (reports - ifNull(mean_28d_raw, 0)) / std_28d_raw
+        ) AS z_score,
+        clamp(0, 100, 50 + 15 * z_score) AS worseness_index
+    FROM base
+    WHERE day = d_asof

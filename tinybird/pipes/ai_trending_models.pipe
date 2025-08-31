@@ -1,0 +1,25 @@
+DESCRIPTION Top models by report count, last 24h, delta vs previous 24h.
+
+NODE base
+SQL >
+    %
+    WITH
+        now() AS t_now,
+        t_now - INTERVAL 1 DAY AS t_24h,
+        t_now - INTERVAL 2 DAY AS t_48h
+    SELECT
+        model,
+        countIf(timestamp >= t_24h AND timestamp < t_now) AS reports_24h,
+        countIf(timestamp >= t_48h AND timestamp < t_24h) AS reports_prev_24h,
+        (reports_24h - reports_prev_24h)                  AS delta
+    FROM ai_model_signals
+    WHERE timestamp >= t_48h
+    GROUP BY model
+    ORDER BY reports_24h DESC
+    LIMIT {{ Int32(limit, 10) }}
+
+NODE result
+SQL >
+    SELECT * FROM base
+
+TYPE ENDPOINT

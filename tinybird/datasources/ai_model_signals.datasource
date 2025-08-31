@@ -1,0 +1,16 @@
+# Minimal MVP Data Source for “worse or just me?”
+
+SCHEMA >
+  `timestamp`      DateTime `json:$.timestamp` DEFAULT now(),
+  `model`          LowCardinality(String) `json:$.model`,
+  `environment`    LowCardinality(String) `json:$.environment`,
+  `issue_category` LowCardinality(String) `json:$.issue_category`,
+  `details`        String `json:$.details`,
+  `user_agent`     String `json:$.user_agent`,
+  `ip_address`     String `json:$.ip_address`,
+  `location`       LowCardinality(String) `json:$.location`
+
+ENGINE "MergeTree"
+ENGINE_PARTITION_KEY "toYYYYMM(timestamp)"
+ENGINE_SORTING_KEY "model, environment, timestamp"
+ENGINE_TTL "timestamp + toIntervalDay(180)"

@@ -1,0 +1,21 @@
+DESCRIPTION Daily counts for a model & date window.
+
+NODE base
+SQL >
+    %
+    SELECT
+        toDate(timestamp) AS day,
+        count()           AS reports
+    FROM ai_model_signals
+    WHERE
+        timestamp >= parseDateTimeBestEffort({{ String(date_from, '2025-08-01T00:00:00Z') }})
+        AND timestamp <  parseDateTimeBestEffort({{ String(date_to,   '2025-08-31T00:00:00Z') }})
+        AND model = {{ String(model, 'GPT-5') }}
+    GROUP BY day
+    ORDER BY day
+
+NODE result
+SQL >
+    SELECT * FROM base
+
+TYPE ENDPOINT
