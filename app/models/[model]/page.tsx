@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { trpc } from "@/app/lib/trpc-client";
 
 import Stat from "@/components/Stat";
@@ -15,17 +15,54 @@ import ReportIssueForm from "@/components/ReportIssueForm";
 import TopClustersTable from "@/components/TopClustersTable";
 import MetricsExplainer from "@/components/MetricsExplainer";
 
+// --- UTC helpers (shared with FiltersBar semantics) ---
+function isoNoMs(d: Date) {
+  const s = d.toISOString();
+  return s.replace(/\.\d{3}Z$/, "Z");
+}
+function startOfUTCDay(d = new Date()) {
+  const x = new Date(d);
+  x.setUTCHours(0, 0, 0, 0);
+  return x;
+}
+function addDaysUTC(d: Date, days: number) {
+  const x = new Date(d);
+  x.setUTCDate(x.getUTCDate() + days);
+  return x;
+}
+
 export default function ModelDetailPage() {
   const params = useParams<{ model?: string }>();
   const model = decodeURIComponent(params.model ?? "GPT-5");
 
-  // default the window to a recent month
-  const [dateFrom, setDateFrom] = useState("2025-08-01T00:00:00Z");
-  const [dateTo, setDateTo] = useState("2025-08-31T00:00:00Z");
+  // Default: Last 30 days UTC, [from, to) where to = today 24:00Z
+  const initialRange = useMemo(() => {
+    const today00 = startOfUTCDay();
+    const from = addDaysUTC(today00, -29);
+    const to = addDaysUTC(today00, 1); // tomorrow 00:00Z exclusive
+    return { from: isoNoMs(from), to: isoNoMs(to) };
+  }, []);
 
-  // NEW: summary is now 0–100 index data
+  const [dateFrom, setDateFrom] = useState(initialRange.from);
+  const [dateTo, setDateTo] = useState(initialRange.to);
+
+  // Compute the window length in days to request from Tinybird (7..90)
+  const daysRequested = useMemo(() => {
+    const ms = Date.parse(dateTo) - Date.parse(dateFrom);
+    const d = Math.max(1, Math.ceil(ms / 86_400_000));
+    return Math.max(7, Math.min(90, d));
+  }, [dateFrom, dateTo]);
+
+  // KPIs: normalized index
   const summary = trpc.model.summary.useQuery({ model });
-  const vibe = trpc.model.vibeSeries.useQuery({ model, days: 30 });
+
+  // Timeseries: ask for days to match the current focus window (clamped)
+  const vibe = trpc.model.vibeSeries.useQuery({
+    model,
+    days: daysRequested,
+  });
+
+  // Range-bound queries
   const breakdown = trpc.issue.breakdown.useQuery({
     model,
     date_from: dateFrom,
@@ -87,12 +124,12 @@ export default function ModelDetailPage() {
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Stat
             label="Worseness Today (Index)"
-            value={(s?.today_index_100 ?? 0).toFixed(0)}
+            value={(s?.today_index_100 ?? 50).toFixed(0)}
             help="0–100 worseness index (≈50 baseline; higher is worse than usual)."
           />
           <Stat
             label="7d baseline (Index)"
-            value={(s?.avg_prev_7d_index_100 ?? 0).toFixed(0)}
+            value={(s?.avg_prev_7d_index_100 ?? 50).toFixed(0)}
             help="Average of the last 7 days’ index values (excl. today)."
           />
           <Stat
@@ -125,12 +162,16 @@ export default function ModelDetailPage() {
         {/* Vibe timeseries */}
         <div className="rounded-2xl border border-border bg-background p-5">
           <h3 className="mb-3 text-base font-semibold">
-            Vibe over time (last 30 days)
+            Vibe over time ({daysRequested} days)
           </h3>
           {vibe.isLoading ? (
             <div className="h-[280px] animate-pulse rounded-xl border border-border bg-background" />
           ) : (vibe.data?.rows ?? []).length ? (
-            <VibeTimeseriesChart data={vibe.data!.rows} />
+            <VibeTimeseriesChart
+              data={vibe.data!.rows}
+              focusFromISO={dateFrom}
+              focusToISO={dateTo}
+            />
           ) : (
             <div className="p-8 text-center text-foreground/70">No data.</div>
           )}

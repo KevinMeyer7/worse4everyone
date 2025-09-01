@@ -52,20 +52,59 @@ type Row = {
   issue_category?: string;
 };
 
-/** Custom label with leader line (what Recharts passes to label renderer) */
+/** Small helper to detect mobile (client-only, avoids SSR mismatches) */
+function useIsMobile(breakpoint = 640) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width:${breakpoint}px)`);
+    const onChange = (e: MediaQueryListEvent | MediaQueryList) =>
+      setIsMobile("matches" in e ? e.matches : (e as MediaQueryList).matches);
+    onChange(mql);
+    if ("addEventListener" in mql) {
+      mql.addEventListener(
+        "change",
+        onChange as (e: MediaQueryListEvent) => void
+      );
+      return () =>
+        mql.removeEventListener(
+          "change",
+          onChange as (e: MediaQueryListEvent) => void
+        );
+    } else {
+      (mql as MediaQueryList).addListener(onChange);
+      return () => {
+        (mql as MediaQueryList).removeListener(onChange);
+      };
+    }
+  }, [breakpoint]);
+  return isMobile;
+}
+
+/** Custom label with leader line (desktop only) */
 interface SliceLabelProps extends PieLabelRenderProps {
   payload: Row;
   value: number;
   index: number;
   outerRadius: number;
+  cutoff?: number; // e.g. 0.05 = 5%
 }
 
 function renderSliceLabel(props: SliceLabelProps) {
-  const { cx, cy, midAngle, outerRadius, percent, index, payload, value } =
-    props;
+  const {
+    cx,
+    cy,
+    midAngle,
+    outerRadius,
+    percent,
+    index,
+    payload,
+    value,
+    cutoff,
+  } = props;
 
-  // Hide very small slices to reduce clutter
-  if (percent === undefined || percent < 0.05) return null;
+  // Hide small slices to reduce clutter
+  const minCutoff = typeof cutoff === "number" ? cutoff : 0.05;
+  if (percent === undefined || percent < minCutoff) return null;
 
   // Ensure cx, cy, and outerRadius are numbers
   const cxNum = typeof cx === "number" ? cx : Number(cx);
@@ -83,11 +122,15 @@ function renderSliceLabel(props: SliceLabelProps) {
   const ty = ey;
 
   const color = COLORS[index % COLORS.length];
-  const name: string =
+
+  // Derive display name and truncate Context Memory specifically
+  const rawName: string =
     payload.issue_tag ??
     payload.issue_category ??
     payload.name ??
     `Slice ${index + 1}`;
+  const name = rawName === "Context Memory" ? "Context Mem" : rawName;
+
   const pctText = `${(percent * 100).toFixed(1)}%`;
 
   return (
@@ -158,6 +201,7 @@ export default function IssueBreakdownChart({
 }) {
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<Mode>(defaultMode);
+  const isMobile = useIsMobile(640);
   useEffect(() => setMounted(true), []);
 
   // Normalize rows to { name, value, pct }
@@ -185,24 +229,37 @@ export default function IssueBreakdownChart({
     pct: total ? (100 * d.value) / total : 0,
   }));
 
+  // Global rule (mobile + desktop): hide ALL slices under 5%
+  const displayData = withPct.filter((d) => d.pct >= 5);
+
+  // Mobile-friendly sizing & margins; labels are off on mobile
+  const chartHeight = isMobile ? 420 : 360;
+  const pieInner = isMobile ? 64 : 80;
+  const pieOuter = isMobile ? 100 : 120;
+  const chartMargin = isMobile
+    ? { top: 16, right: 72, bottom: 16, left: 72 }
+    : { top: 24, right: 48, bottom: 24, left: 48 };
+
+  const hasDisplayData = mounted && total > 0 && displayData.length > 0;
+
   return (
-    <div className="rounded-2xl border border-border bg-background p-6 text-foreground shadow-sm">
-      <div className="mb-4 flex items-end justify-between gap-3">
+    <div className="rounded-2xl border border-border bg-background p-4 sm:p-6 text-foreground shadow-sm">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
         <div>
-          <h2 className="text-xl font-semibold">Issue breakdown</h2>
-          <p className="text-sm text-foreground/70">
+          <h2 className="text-lg sm:text-xl font-semibold">Issue breakdown</h2>
+          <p className="text-xs sm:text-sm text-foreground/70">
             Share of reports by category
             {mode === "weighted" ? " (weighted)" : " (raw)"}
           </p>
         </div>
-        <div className="flex items-center gap-3 text-right text-sm text-foreground/80">
+        <div className="flex items-center justify-between sm:justify-end gap-3 text-right text-xs sm:text-sm text-foreground/80">
           <div>
             Total: <span className="font-medium">{total.toLocaleString()}</span>
           </div>
           {showModeToggle && (
-            <div className="rounded-lg border border-border">
+            <div className="rounded-lg border border-border overflow-hidden">
               <button
-                className={`px-2 py-1 text-xs ${
+                className={`px-2 py-1 text-[11px] sm:text-xs ${
                   mode === "raw" ? "bg-muted/60" : ""
                 }`}
                 onClick={() => setMode("raw")}
@@ -210,7 +267,7 @@ export default function IssueBreakdownChart({
                 Raw
               </button>
               <button
-                className={`px-2 py-1 text-xs border-l border-border ${
+                className={`px-2 py-1 text-[11px] sm:text-xs border-l border-border ${
                   mode === "weighted" ? "bg-muted/60" : ""
                 }`}
                 onClick={() => setMode("weighted")}
@@ -222,16 +279,19 @@ export default function IssueBreakdownChart({
         </div>
       </div>
 
-      <div style={{ width: "100%", height: 360 }}>
-        {mounted && total > 0 ? (
+      <div
+        style={{ width: "100%", height: chartHeight, overflow: "visible" }}
+        className="sm:overflow-visible"
+      >
+        {hasDisplayData ? (
           <ResponsiveContainer width="100%" height="100%">
-            <PieChart margin={{ top: 24, right: 48, bottom: 24, left: 48 }}>
+            <PieChart margin={chartMargin}>
               <Pie
-                data={withPct}
+                data={displayData}
                 dataKey="value"
                 nameKey="name"
-                innerRadius={80}
-                outerRadius={120}
+                innerRadius={pieInner}
+                outerRadius={pieOuter}
                 startAngle={90}
                 endAngle={-270}
                 stroke="var(--border)"
@@ -240,13 +300,20 @@ export default function IssueBreakdownChart({
                 cornerRadius={2}
                 isAnimationActive={true}
                 labelLine={false}
-                label={(props: PieLabelRenderProps) =>
-                  typeof props.midAngle === "number"
-                    ? renderSliceLabel(props as SliceLabelProps)
-                    : null
+                // Desktop: show smart labels; Mobile: NO labels at all
+                label={
+                  isMobile
+                    ? false
+                    : (props: PieLabelRenderProps) =>
+                        typeof props.midAngle === "number"
+                          ? renderSliceLabel({
+                              ...(props as SliceLabelProps),
+                              cutoff: 0.05, // keep ≥5% rule even for label renderer
+                            })
+                          : null
                 }
               >
-                {withPct.map((_, i) => (
+                {displayData.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
                 <Label
@@ -268,7 +335,7 @@ export default function IssueBreakdownChart({
                           x={cx}
                           y={cy - 6}
                           textAnchor="middle"
-                          className="fill-current text-foreground text-2xl font-bold"
+                          className="fill-current text-foreground text-xl sm:text-2xl font-bold"
                         >
                           {total.toLocaleString()}
                         </text>
@@ -276,7 +343,7 @@ export default function IssueBreakdownChart({
                           x={cx}
                           y={cy + 14}
                           textAnchor="middle"
-                          className="fill-current text-foreground/60 text-xs"
+                          className="fill-current text-foreground/60 text-[10px] sm:text-xs"
                         >
                           {mode === "weighted" ? "weighted" : "raw"} total
                         </text>
@@ -303,10 +370,43 @@ export default function IssueBreakdownChart({
           </ResponsiveContainer>
         ) : (
           <div className="rounded-xl border border-border bg-background p-12 text-center text-foreground/70">
-            No data.
+            {mounted && total > 0
+              ? "No categories ≥ 5% to display."
+              : "No data."}
           </div>
         )}
       </div>
+
+      {/* Legend ONLY on mobile; desktop relies on in-chart labels */}
+      {mounted && total > 0 && isMobile && displayData.length > 0 && (
+        <div className="mt-4 sm:mt-6">
+          <p className="mb-2 text-[10px] text-foreground/60">
+            Showing categories ≥ 5% on small screens.
+          </p>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+            {displayData.map((row, i) => (
+              <li
+                key={`${row.name}-${i}`}
+                className="flex items-center justify-between gap-3 text-xs sm:text-sm"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: COLORS[i % COLORS.length] }}
+                    aria-hidden
+                  />
+                  <span className="truncate" title={row.name}>
+                    {row.name}
+                  </span>
+                </span>
+                <span className="tabular-nums text-foreground/70 shrink-0">
+                  {row.value.toLocaleString()} • {row.pct.toFixed(1)}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

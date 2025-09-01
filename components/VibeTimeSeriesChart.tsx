@@ -14,7 +14,7 @@ import {
 } from "recharts";
 
 type Point = {
-  day: string;
+  day: string; // "YYYY-MM-DD"
   worse_w: number;
   better_w: number;
   net_w: number;
@@ -23,33 +23,41 @@ type Point = {
 
 type Mode = "index" | "counts";
 
-const COLORS = {
-  worse: "#ef4444", // rose-500
-  better: "#22c55e", // emerald-500
-  net: "#64748b", // slate-500
-  index: "#0ea5e9", // sky-500
-  grid: "rgba(148,163,184,.25)", // slate-400 @ 25%
-};
+function parseDayToUTC(d: string): number {
+  const [y, m, day] = d.split("-").map(Number);
+  return Date.UTC(y, (m || 1) - 1, day || 1);
+}
 
-const labelForKey: Record<string, string> = {
-  worse_w: "Worse (weighted)",
-  better_w: "Better (weighted)",
-  net_w: "Net (w−b)",
-  index_100: "Index",
-};
-
-export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
+export default function VibeTimeseriesChart({
+  data,
+  focusFromISO,
+  focusToISO,
+}: {
+  data: Point[];
+  focusFromISO?: string;
+  focusToISO?: string;
+}) {
   const [mode, setMode] = useState<Mode>("index");
-  const rows = useMemo(() => data ?? [], [data]);
-  const hasIndex = rows.some((r) => typeof r.index_100 === "number");
+  const hasIndex = data?.some((r) => typeof r.index_100 === "number");
+
+  const rows = useMemo(() => {
+    if (!data) return [];
+    if (!focusFromISO || !focusToISO) return data;
+    const from = Date.parse(focusFromISO);
+    const to = Date.parse(focusToISO);
+    return data.filter((r) => {
+      const t = parseDayToUTC(r.day);
+      return t >= from && t < to;
+    });
+  }, [data, focusFromISO, focusToISO]);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-foreground/70">
           {mode === "counts"
-            ? "Daily weighted points: red = worse, green = better, gray = net (w−b)."
-            : "0–100 worseness index (50 ≈ baseline; above is worse, below is better)."}
+            ? "Daily weighted points: worse, better, and net (worse − better)."
+            : "0–100 worseness index (50 ≈ baseline; higher is worse than usual)."}
         </p>
         <div className="rounded-lg border border-border text-xs">
           <button
@@ -75,11 +83,10 @@ export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
         <ResponsiveContainer width="100%" height="100%">
           {mode === "index" ? (
             <LineChart data={rows}>
-              <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" />
+              <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="day" />
               <YAxis
                 domain={[0, 100]}
-                tickCount={6}
                 label={{
                   value: "Worseness index (0–100)",
                   angle: -90,
@@ -91,40 +98,31 @@ export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
                   },
                 }}
               />
-              <ReferenceLine
-                y={50}
-                stroke="var(--border)"
-                strokeDasharray="4 4"
-              />
+              <ReferenceLine y={50} strokeDasharray="4 4" />
               <Tooltip
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(v, _n, payload: any) => {
-                  const key = payload?.dataKey as string;
-                  return [
-                    Number(v as number).toFixed(0),
-                    labelForKey[key] ?? "Index",
-                  ];
-                }}
+                formatter={(v: number | string) => [
+                  Number(v).toFixed(0),
+                  "Index",
+                ]}
               />
               <Legend />
               <Line
                 type="monotone"
                 dataKey="index_100"
                 name="Index"
-                stroke={COLORS.index}
-                strokeWidth={2}
                 dot={false}
-                connectNulls
-                isAnimationActive
+                strokeWidth={2}
+                stroke="#2563eb"
+                isAnimationActive={false}
               />
             </LineChart>
           ) : (
             <LineChart data={rows}>
-              <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" />
+              <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="day" />
               <YAxis
                 label={{
-                  value: "Weighted report points / day",
+                  value: "Weighted report points/day",
                   angle: -90,
                   position: "insideLeft",
                   style: {
@@ -134,52 +132,52 @@ export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
                   },
                 }}
               />
-              <ReferenceLine
-                y={0}
-                stroke="var(--border)"
-                strokeDasharray="4 4"
-              />
               <Tooltip
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                formatter={(v, _n, payload: any) => {
-                  const key = payload?.dataKey as string;
-                  return [
-                    Number(v as number).toFixed(1),
-                    labelForKey[key] ?? key,
-                  ];
+                formatter={(
+                  value: number | string,
+                  _name: string,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  item: any
+                ) => {
+                  const dk: string = item && item.dataKey;
+                  const label =
+                    dk === "net_w"
+                      ? "Net (worse − better)"
+                      : dk === "worse_w"
+                      ? "Worse (weighted)"
+                      : dk === "better_w"
+                      ? "Better (weighted)"
+                      : dk || "value";
+                  return [Number(value).toFixed(1), label];
                 }}
               />
               <Legend />
               <Line
                 type="monotone"
                 dataKey="worse_w"
-                name={labelForKey.worse_w}
-                stroke={COLORS.worse}
-                strokeWidth={2}
+                name="Worse (weighted)"
                 dot={false}
-                connectNulls
-                isAnimationActive
+                strokeWidth={2}
+                stroke="#ef4444" // red
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
                 dataKey="better_w"
-                name={labelForKey.better_w}
-                stroke={COLORS.better}
-                strokeWidth={2}
+                name="Better (weighted)"
                 dot={false}
-                connectNulls
-                isAnimationActive
+                strokeWidth={2}
+                stroke="#22c55e" // green
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
                 dataKey="net_w"
-                name={labelForKey.net_w}
-                stroke={COLORS.net}
-                strokeWidth={2}
-                strokeDasharray="6 4"
+                name="Net (w − b)"
                 dot={false}
-                connectNulls
-                isAnimationActive
+                strokeWidth={2}
+                stroke="#a855f7" // purple
+                isAnimationActive={false}
               />
             </LineChart>
           )}
