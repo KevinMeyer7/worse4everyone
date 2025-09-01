@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import dayjs from "dayjs";
 
 type Row = {
@@ -20,16 +21,20 @@ export default function RecentReports({
   data: Row[];
   loading?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (loading)
     return (
       <div className="h-[280px] animate-pulse rounded-xl border border-border bg-background" />
     );
 
+  const visibleData = expanded ? data : data.slice(0, 3);
+
   return (
     <div className="rounded-2xl border border-border bg-background p-5">
       <h3 className="mb-3 text-base font-semibold">Recent reports</h3>
       <div className="space-y-3">
-        {data.slice(0, 20).map((r, i) => (
+        {visibleData.map((r, i) => (
           <div
             key={i}
             className="rounded-xl border border-border/70 bg-background/60 p-3"
@@ -51,10 +56,20 @@ export default function RecentReports({
             {r.details && <p className="text-sm">{r.details}</p>}
           </div>
         ))}
+
         {!data.length && (
           <div className="p-8 text-center text-foreground/70">Nothing yet.</div>
         )}
       </div>
+
+      {data.length > 5 && (
+        <button
+          onClick={() => setExpanded((prev) => !prev)}
+          className="mt-4 w-full text-sm font-medium text-primary hover:underline"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
     </div>
   );
 }

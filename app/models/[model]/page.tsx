@@ -86,7 +86,7 @@ export default function ModelDetailPage() {
         {/* KPIs (normalized, 0–100) */}
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Stat
-            label="Today (Index)"
+            label="Worseness Today (Index)"
             value={(s?.today_index_100 ?? 0).toFixed(0)}
             help="0–100 worseness index (≈50 baseline; higher is worse than usual)."
           />
@@ -156,7 +156,7 @@ export default function ModelDetailPage() {
             )}
           </div>
 
-          <div className="rounded-2xl border border-border bg-background p-5">
+          <div className="rounded-2xl border border-border bg-background p-5 flex flex-col">
             <h3 className="mb-3 text-base font-semibold">
               Where it’s worse (weighted)
             </h3>

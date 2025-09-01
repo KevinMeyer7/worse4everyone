@@ -65,7 +65,7 @@ function renderSliceLabel(props: SliceLabelProps) {
     props;
 
   // Hide very small slices to reduce clutter
-  if (percent === undefined || percent < 0.02) return null;
+  if (percent === undefined || percent < 0.05) return null;
 
   // Ensure cx, cy, and outerRadius are numbers
   const cxNum = typeof cx === "number" ? cx : Number(cx);
@@ -225,7 +225,7 @@ export default function IssueBreakdownChart({
       <div style={{ width: "100%", height: 360 }}>
         {mounted && total > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
+            <PieChart margin={{ top: 24, right: 48, bottom: 24, left: 48 }}>
               <Pie
                 data={withPct}
                 dataKey="value"

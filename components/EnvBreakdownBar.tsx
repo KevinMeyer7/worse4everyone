@@ -1,4 +1,5 @@
 "use client";
+import { useMemo } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -32,7 +33,6 @@ const tooltipFormatter: TooltipProps<V, N>["formatter"] = (
   const payload = (item?.payload ?? {}) as Row;
   const pct = payload.pct_w ?? 0;
   const env = payload.environment ?? "";
-
   return [`${Number(value).toFixed(1)} (${pct.toFixed(1)}%)`, env];
 };
 
@@ -52,12 +52,16 @@ const BAR_COLORS = [
 ];
 
 export default function EnvBreakdownBar({ data }: { data: EnvRow[] }) {
-  // ⚠️ functionality unchanged
-  const rows = [...data].sort((a, b) => b.reports_w - a.reports_w);
+  // keep functionality the same
+  const rows = useMemo(
+    () => [...data].sort((a, b) => b.reports_w - a.reports_w),
+    [data]
+  );
   const total = rows.reduce((a, b) => a + (b.reports_w || 0), 0) || 1;
 
   return (
-    <div>
+    // Make the component stretch to fill the parent card
+    <div className="flex h-full flex-col">
       <div className="mb-2 flex items-center justify-between text-sm text-foreground/70">
         <span>Weighted worse reports by environment</span>
         <span>
@@ -65,12 +69,13 @@ export default function EnvBreakdownBar({ data }: { data: EnvRow[] }) {
         </span>
       </div>
 
-      <div className="h-[320px] w-full rounded-2xl border border-border bg-background p-3">
+      {/* Let the chart container grow; keep a sensible minimum height */}
+      <div className="flex-1 min-h-[320px] w-full rounded-2xl border border-border bg-background p-3">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={rows}
             layout="vertical"
-            margin={{ left: 8, right: 16 }}
+            margin={{ top: 8, bottom: 8, left: 8, right: 16 }}
           >
             <CartesianGrid
               stroke="var(--border)"
