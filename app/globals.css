@@ -1,10 +1,100 @@
+/* app/globals.css */
 @import "tailwindcss";
+
+/* v4: activate plugins here */
+@plugin "@tailwindcss/forms";
+@plugin "tailwindcss-animate";
+
+/* Optional: dark variant helper */
+@custom-variant dark (&:is(.dark *));
+
+/* Base tokens (you can tweak later) */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --border: oklch(0.922 0 0);
+}
 
 html, body { height: 100%; }
 :root { color-scheme: light; }
 body { @apply bg-slate-50 text-slate-900; }
 
-/* (Optional) nicer focus rings */
-input, select, button {
-  @apply focus:outline-none focus:ring-2 focus:ring-slate-300;
+/* nicer focus */
+input, select, button { @apply focus:outline-none focus:ring-2 focus:ring-slate-300; }
+
+/* (optional) expose tokens as Tailwind colors */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
 }
+
+/* (optional) dark mode tokens */
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+}
+
+/* layer base tweaks */
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}
+
+/* --- HACKER / TERMINAL THEME (scoped) --- */
+
+/* apply this class on a wrapper (e.g., <main class="hacker">)
+   so you can keep your normal site styling elsewhere */
+   .hacker {
+    /* override your design tokens */
+    --background: #0a0a0a;
+    --foreground: #4AF262; /* terminal green */
+    --border: color-mix(in srgb, #4AF262 20%, transparent);
+  
+    /* optional accent if you want amber instead of green in places */
+    --terminal-amber: #FFB000;
+  }
+  
+  /* subtle CRT vibe */
+  .hacker .crt {
+    position: relative;
+    text-shadow:
+      0 0 2px color-mix(in srgb, var(--foreground) 60%, transparent),
+      0 0 12px color-mix(in srgb, var(--foreground) 15%, transparent);
+  }
+  .hacker .crt::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,.05) 0 1px,
+      transparent 1px 3px
+    );
+    mix-blend-mode: overlay;
+    opacity: .35;
+  }
+  
+  /* blinking block cursor */
+  .hacker .cursor-block { width: .65ch; height: 1.05em; display: inline-block; }
+  .hacker .blink { animation: blink 1s steps(1,end) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  
+  /* softer focus ring that matches the vibe */
+  .hacker input, .hacker select, .hacker button {
+    @apply focus:outline-none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--foreground) 30%, transparent);
+  }
+  
+  /* optional: respect motion prefs */
+  @media (prefers-reduced-motion: reduce) {
+    .hacker .blink { animation: none; }
+  }
+  
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  

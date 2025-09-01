@@ -1,0 +1,33 @@
+DESCRIPTION >
+  Explicit, human-submitted reports with severity, reproducibility & vibe.
+
+TAGS raindrop, ai, feedback, explicit
+
+SCHEMA >
+  `timestamp`            DateTime                 `json:$.timestamp` DEFAULT now(),
+  `model`                LowCardinality(String)   `json:$.model`,
+  `environment`          LowCardinality(String)   `json:$.environment`,
+  `environment_version`  LowCardinality(String)   `json:$.environment_version` DEFAULT '',
+  `mode`                 LowCardinality(String)   `json:$.mode` DEFAULT 'text',
+
+  `issue_category`       LowCardinality(String)   `json:$.issue_category`,
+  `issue_tags`           Array(String)            `json:$.issue_tags[:]` DEFAULT [],   -- ✅ dot path + [:]
+
+  `severity`             LowCardinality(String)   `json:$.severity` DEFAULT 'noticeable',
+  `repro`                LowCardinality(String)   `json:$.repro`    DEFAULT 'sometimes',
+  `vibe`                 LowCardinality(String)   `json:$.vibe`     DEFAULT 'worse',
+
+  `details`              String                   `json:$.details`     DEFAULT '',      -- ✅ safe defaults
+  `user_agent`           String                   `json:$.user_agent`  DEFAULT '',
+  `ip_address`           String                   `json:$.ip_address`  DEFAULT '',
+  `location`             LowCardinality(String)   `json:$.location`    DEFAULT '',
+
+  `source`               LowCardinality(String)   `json:$.source`    DEFAULT 'web',
+  `latency_ms`           UInt32                   `json:$.latency_ms` DEFAULT 0,
+  `http_status`          UInt16                   `json:$.http_status` DEFAULT 0,
+  `error_code`           LowCardinality(String)   `json:$.error_code` DEFAULT ''
+
+ENGINE "MergeTree"
+ENGINE_PARTITION_KEY "toYYYYMM(timestamp)"
+ENGINE_SORTING_KEY   "model, environment, timestamp"
+ENGINE_TTL           "timestamp + toIntervalDay(365)"

@@ -1,0 +1,68 @@
+DESCRIPTION Models overview: today worse-weighted vs 7d avg + top issue tag (v1+v2).
+
+NODE result
+SQL >
+    %
+    WITH
+      toDate(now()) AS d_asof,
+      (d_asof - {{ Int32(lookback_days, 30) }} + 1) AS lookback_from,
+      (d_asof - 7)  AS d_prev_from,
+      (d_asof - 1)  AS d_prev_to,
+      (d_asof - {{ Int32(top_issue_window_days, 7) }} + 1) AS issue_from
+    SELECT
+      bs.model,
+      bs.today_worse_w              AS today_reports,
+      bs.avg_prev_7d_w              AS avg_prev_7d,
+      if(bs.avg_prev_7d_w = 0, 0, 100.0 * (bs.today_worse_w - bs.avg_prev_7d_w) / bs.avg_prev_7d_w) AS pct_vs_prev_7d,
+      ti.top_issue_tag              AS top_issue
+    FROM
+    (
+      SELECT
+        model,
+        sumIf(weight, toDate(ts) = d_asof AND vibe='worse')                           AS today_worse_w,
+        toFloat64(sumIf(weight, toDate(ts) BETWEEN d_prev_from AND d_prev_to AND vibe='worse')) / 7.0 AS avg_prev_7d_w
+      FROM
+      (
+        SELECT model, timestamp AS ts, vibe,
+               multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+               * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6) AS weight
+        FROM ai_model_signals
+        WHERE toDate(timestamp) BETWEEN lookback_from AND d_asof
+        UNION ALL
+        SELECT model, timestamp, vibe,
+               multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+               * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6)
+        FROM ai_user_feedback
+        WHERE toDate(timestamp) BETWEEN lookback_from AND d_asof
+      )
+      GROUP BY model
+    ) AS bs
+    LEFT JOIN
+    (
+      SELECT model, argMax(tag, cnt_w) AS top_issue_tag
+      FROM
+      (
+        SELECT model, tag, sum(weight) AS cnt_w
+        FROM
+        (
+          SELECT model, arrayJoin( if(empty(issue_tags), [issue_category], issue_tags) ) AS tag,
+                 multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+                 * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6) AS weight,
+                 timestamp
+          FROM ai_model_signals
+          UNION ALL
+          SELECT model, arrayJoin( if(empty(issue_tags), [issue_category], issue_tags) ) AS tag,
+                 multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+                 * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6),
+                 timestamp
+          FROM ai_user_feedback
+        )
+        WHERE toDate(timestamp) BETWEEN issue_from AND d_asof
+        GROUP BY model, tag
+      )
+      GROUP BY model
+    ) AS ti USING model
+    ORDER BY bs.today_worse_w DESC
+    LIMIT {{ Int32(limit, 8) }}
+
+TYPE ENDPOINT

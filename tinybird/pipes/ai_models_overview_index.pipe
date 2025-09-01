@@ -1,0 +1,60 @@
+DESCRIPTION Per-model overview ranked by today’s 0–100 index (with delta vs 7-day avg index).
+
+NODE base
+SQL >
+    %
+    WITH today() AS d_asof
+    SELECT
+      model,
+      toDate(timestamp) AS day,
+      sumIf(
+        multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+        * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6),
+        vibe='worse'
+      )
+      -
+      sumIf(
+        multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+        * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6),
+        vibe='better'
+      ) AS net_w
+    FROM (
+      SELECT timestamp, model, severity, repro, vibe FROM ai_model_signals
+      UNION ALL
+      SELECT timestamp, model, severity, repro, vibe FROM ai_user_feedback
+    )
+    WHERE toDate(timestamp) >= d_asof - 60
+    GROUP BY model, day
+    ORDER BY model, day
+
+NODE with_index
+SQL >
+    %
+    SELECT
+      model, day, net_w,
+      avg(net_w)     OVER (PARTITION BY model ORDER BY day ROWS BETWEEN 28 PRECEDING AND 1 PRECEDING) AS mean_28d,
+      stddevPop(net_w) OVER (PARTITION BY model ORDER BY day ROWS BETWEEN 28 PRECEDING AND 1 PRECEDING) AS std_28d,
+      count(net_w)   OVER (PARTITION BY model ORDER BY day ROWS BETWEEN 28 PRECEDING AND 1 PRECEDING) AS n_prior,
+      clamp(0, 100,
+        50 + 15 * if(std_28d = 0 OR isNull(std_28d) OR n_prior < 7, 0, (net_w - mean_28d) / std_28d)
+      ) AS index_100
+    FROM base
+
+NODE result
+SQL >
+    %
+    WITH
+      today() AS d_asof,
+      (d_asof - 7) AS d_prev_from,
+      (d_asof - 1) AS d_prev_to
+    SELECT
+      model,
+      anyIf(index_100, day = d_asof)                                           AS today_index_100,
+      avgIf(index_100, day BETWEEN d_prev_from AND d_prev_to)                  AS avg_prev_7d_index_100,
+      today_index_100 - avg_prev_7d_index_100                                  AS delta_index_pts
+    FROM with_index
+    GROUP BY model
+    ORDER BY today_index_100 DESC
+    LIMIT {{ Int32(limit, 8) }}
+
+TYPE ENDPOINT

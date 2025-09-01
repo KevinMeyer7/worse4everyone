@@ -3,7 +3,7 @@ import "@/app/globals.css";
 import { TRPCProvider } from "./lib/trpc-client";
 
 export const metadata: Metadata = {
-  title: "AI Issue Breakdown",
+  title: "worse4everyone",
   description: "Is it worse for everyone or just me?",
 };
 

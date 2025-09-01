@@ -1,21 +1,53 @@
-DESCRIPTION Issue mix for a model & date window.
+DESCRIPTION Issue/tag mix for a model & window; weighted worse points + raw counts + %.
 
 NODE base
 SQL >
     %
+    WITH
+      parseDateTimeBestEffort({{ String(date_from, '2025-08-01T00:00:00Z') }}) AS t_from,
+      parseDateTimeBestEffort({{ String(date_to,   '2025-08-31T00:00:00Z') }}) AS t_to,
+      {{ String(model, 'GPT-5') }} AS m
     SELECT
-        issue_category,
-        count() AS reports
-    FROM ai_model_signals
-    WHERE
-        timestamp >= parseDateTimeBestEffort({{ String(date_from, '2025-08-01T00:00:00Z') }})
-        AND timestamp <  parseDateTimeBestEffort({{ String(date_to,   '2025-08-31T00:00:00Z') }})
-        AND model = {{ String(model, 'GPT-5') }}
-    GROUP BY issue_category
-    ORDER BY reports DESC
+      tag AS issue_tag,
+      sumIf(weight, vibe='worse') AS reports_w,
+      countIf(vibe='worse')       AS reports_n
+    FROM (
+      SELECT
+        timestamp, model, issue_tags, severity, repro, vibe,
+        multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+        *
+        multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6)
+        AS weight
+      FROM ai_model_signals
+      UNION ALL
+      SELECT
+        timestamp, model, issue_tags, severity, repro, vibe,
+        multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+        *
+        multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6)
+        AS weight
+      FROM ai_user_feedback
+    )
+    ARRAY JOIN issue_tags AS tag
+    WHERE model = m AND timestamp >= t_from AND timestamp < t_to
+    GROUP BY issue_tag
 
 NODE result
 SQL >
-    SELECT * FROM base
+    %
+    SELECT
+      issue_tag,
+      reports_w,
+      reports_n,
+      if(total_w = 0, 0, 100.0 * reports_w / total_w) AS pct_w
+    FROM (
+      SELECT
+        issue_tag,
+        reports_w,
+        reports_n,
+        sum(reports_w) OVER () AS total_w
+      FROM base
+    )
+    ORDER BY reports_w DESC
 
 TYPE ENDPOINT

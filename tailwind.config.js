@@ -1,10 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [
-    "./app/**/*.{ts,tsx}",
-    "./components/**/*.{ts,tsx}",
-    "./server/**/*.{ts,tsx}",
-  ],
+  // content is optional in v4; leaving it empty is fine
   theme: { extend: {} },
-  plugins: [import("@tailwindcss/forms")],
+  // ❌ DO NOT put `@tailwindcss/forms` here in v4
+  // plugins: []  // keep empty
 };

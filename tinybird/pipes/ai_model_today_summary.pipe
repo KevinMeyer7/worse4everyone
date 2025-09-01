@@ -1,0 +1,30 @@
+DESCRIPTION KPI for a model: today worse-weighted vs previous 7-day avg (v1+v2).
+
+NODE result
+SQL >
+    %
+    WITH
+      parseDateTimeBestEffortOrNull({{ String(as_of, '') }}) AS asof_param,
+      ifNull(toDate(asof_param), today()) AS d_asof,
+      (d_asof - 7) AS d_prev_from,
+      (d_asof - 1) AS d_prev_to,
+      {{ String(model_param, 'GPT-5') }} AS m
+    SELECT
+      m AS model,
+      sumIf(weight, toDate(ts) = d_asof AND vibe='worse') AS today_reports,
+      toFloat64(sumIf(weight, toDate(ts) BETWEEN d_prev_from AND d_prev_to AND vibe='worse')) / 7.0 AS avg_prev_7d,
+      if(avg_prev_7d = 0, 0, 100.0 * (today_reports - avg_prev_7d) / avg_prev_7d) AS pct_vs_prev_7d
+    FROM
+    (
+      SELECT timestamp AS ts, vibe,
+        multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+        * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6) AS weight
+      FROM ai_model_signals WHERE model = m
+      UNION ALL
+      SELECT timestamp, vibe,
+        multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+        * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6)
+      FROM ai_user_feedback WHERE model = m
+    )
+
+TYPE ENDPOINT

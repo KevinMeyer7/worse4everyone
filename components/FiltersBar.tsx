@@ -55,11 +55,12 @@ export default function FiltersBar(props: Filters) {
   }, []);
 
   return (
-    <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
+    <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4 font-mono">
+      {/* Model */}
       <div className="sm:col-span-1">
-        <label className="text-xs font-medium text-slate-600">Model</label>
+        <label className="text-xs font-medium text-foreground/70">Model</label>
         <input
-          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-400"
+          className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--foreground)_30%,transparent)]"
           value={model}
           onChange={(e) => setModel(e.target.value)}
           list="models"
@@ -73,29 +74,38 @@ export default function FiltersBar(props: Filters) {
         </datalist>
       </div>
 
+      {/* From */}
       <div className="sm:col-span-1">
-        <label className="text-xs font-medium text-slate-600">From (ISO)</label>
+        <label className="text-xs font-medium text-foreground/70">
+          From (ISO)
+        </label>
         <input
-          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
+          className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--foreground)_30%,transparent)]"
           value={dateFrom}
           onChange={(e) => setDateFrom(e.target.value)}
         />
       </div>
 
+      {/* To */}
       <div className="sm:col-span-1">
-        <label className="text-xs font-medium text-slate-600">To (ISO)</label>
+        <label className="text-xs font-medium text-foreground/70">
+          To (ISO)
+        </label>
         <input
-          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
+          className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-foreground/50 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--foreground)_30%,transparent)]"
           value={dateTo}
           onChange={(e) => setDateTo(e.target.value)}
         />
       </div>
 
+      {/* Presets + Refresh */}
       <div className="sm:col-span-1">
-        <label className="text-xs font-medium text-slate-600">Presets</label>
-        <div className="mt-1 flex flex-wrap gap-2">
+        <label className="text-xs font-medium text-foreground/70">
+          Presets
+        </label>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           <button
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs shadow-sm hover:bg-slate-50"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--foreground)_30%,transparent)]"
             onClick={() => {
               setDateFrom(presets.last7.from);
               setDateTo(presets.last7.to);
@@ -104,7 +114,7 @@ export default function FiltersBar(props: Filters) {
             Last 7d
           </button>
           <button
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs shadow-sm hover:bg-slate-50"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--foreground)_30%,transparent)]"
             onClick={() => {
               setDateFrom(presets.last30.from);
               setDateTo(presets.last30.to);
@@ -113,7 +123,7 @@ export default function FiltersBar(props: Filters) {
             Last 30d
           </button>
           <button
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs shadow-sm hover:bg-slate-50"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--foreground)_30%,transparent)]"
             onClick={() => {
               setDateFrom(presets.thisMonth.from);
               setDateTo(presets.thisMonth.to);
@@ -124,10 +134,18 @@ export default function FiltersBar(props: Filters) {
 
           <button
             onClick={onRefresh}
-            className="ml-auto rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
+            className="ml-auto inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-1.5 text-xs font-medium text-foreground shadow-sm hover:opacity-90 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--foreground)_30%,transparent)]"
             disabled={isRefreshing}
+            aria-busy={isRefreshing}
           >
-            {isRefreshing ? "Refreshing…" : "Refresh"}
+            {isRefreshing ? (
+              <>
+                Refreshing…
+                <span className="cursor-block blink inline-block h-[1.05em] w-[0.65ch] translate-y-[1px] bg-foreground" />
+              </>
+            ) : (
+              "Refresh"
+            )}
           </button>
         </div>
       </div>

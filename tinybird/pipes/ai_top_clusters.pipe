@@ -1,0 +1,58 @@
+ DESCRIPTION Top incident clusters for a model & window by weighted count. Dedupe by normalized text + dims.
+
+NODE result
+SQL >
+    %
+    WITH
+      parseDateTimeBestEffort({{ String(date_from, '2025-08-01T00:00:00Z') }}) AS t_from,
+      parseDateTimeBestEffort({{ String(date_to,   '2025-08-31T00:00:00Z') }}) AS t_to,
+      {{ String(model, 'GPT-5') }} AS m
+    SELECT
+      issue_category,
+      environment,
+      cluster_key,
+      sum(weight)                       AS cnt_w,       -- weighted count
+      count()                           AS cnt_n,       -- raw count
+      argMax(example, ts)               AS example_details,
+      max(ts)                           AS last_seen
+    FROM
+    (
+      SELECT
+        issue_category,
+        environment,
+        toString(cityHash64(
+          concat(
+            lower(replaceRegexpAll(details, '\\\\s+', ' ')),
+            '|', issue_category, '|', environment
+          )
+        )) AS cluster_key,
+        timestamp AS ts,
+        details   AS example,
+        multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+        * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6) AS weight
+      FROM ai_model_signals
+      WHERE model = m AND timestamp >= t_from AND timestamp < t_to AND length(details) > 0
+
+      UNION ALL
+
+      SELECT
+        issue_category,
+        environment,
+        toString(cityHash64(
+          concat(
+            lower(replaceRegexpAll(details, '\\\\s+', ' ')),
+            '|', issue_category, '|', environment
+          )
+        )) AS cluster_key,
+        timestamp AS ts,
+        details   AS example,
+        multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+        * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6) AS weight
+      FROM ai_user_feedback
+      WHERE model = m AND timestamp >= t_from AND timestamp < t_to AND length(details) > 0
+    )
+    GROUP BY issue_category, environment, cluster_key
+    ORDER BY cnt_w DESC
+    LIMIT {{ Int32(limit, 20) }}
+
+TYPE ENDPOINT

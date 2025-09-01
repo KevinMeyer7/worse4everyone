@@ -1,0 +1,91 @@
+DESCRIPTION Vibe over time for a model (last N days). Returns weighted worse/better/net and a 0–100 index.
+
+NODE params
+SQL >
+    %
+    SELECT
+      {{ String(model, 'GPT-5') }} AS m,
+      toDate(today()) AS d_to,
+      toDate(today() - toIntervalDay({{ Int32(days, 30) }} - 1)) AS d_from,
+      toDate(today() - toIntervalDay({{ Int32(days, 30) }} - 1 + 28)) AS d_pad
+
+NODE daily
+SQL >
+    %
+    -- Build daily worse/better/net from d_pad..d_to (pad gives baseline history)
+    WITH
+      (SELECT m FROM params)     AS m,
+      (SELECT d_pad FROM params) AS d_pad,
+      (SELECT d_to  FROM params) AS d_to
+    SELECT
+      toDate(timestamp) AS day,
+      sumIf(weight, vibe = 'worse')  AS worse_w,
+      sumIf(weight, vibe = 'better') AS better_w,
+      sum(weight * if(vibe='worse', 1, if(vibe='better', -1, 0))) AS net_w
+    FROM
+    (
+      SELECT timestamp, model, vibe,
+             multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+             * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6) AS weight
+      FROM ai_model_signals
+      WHERE model = m AND toDate(timestamp) BETWEEN d_pad AND d_to
+      UNION ALL
+      SELECT timestamp, model, vibe,
+             multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5, 1.0)
+             * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3, 0.6)
+      FROM ai_user_feedback
+      WHERE model = m AND toDate(timestamp) BETWEEN d_pad AND d_to
+    )
+    GROUP BY day
+    ORDER BY day
+
+NODE with_stats
+SQL >
+    %
+    -- Add rolling baseline (28 prior days)
+    SELECT
+      day, worse_w, better_w, net_w,
+      avg(net_w)       OVER w AS mean_28,
+      stddevPop(net_w) OVER w AS std_28,
+      count(net_w)     OVER w AS n_prior
+    FROM daily
+    WINDOW w AS (ORDER BY day ROWS BETWEEN 28 PRECEDING AND 1 PRECEDING)
+
+NODE result
+SQL >
+    %
+    -- Compute index_100 in an inner SELECT (where the WINDOW lives),
+    -- then filter in the OUTER SELECT (so WHERE is not after WINDOW).
+    SELECT
+      day,
+      worse_w,
+      better_w,
+      net_w,
+      index_100
+    FROM
+    (
+      SELECT
+        day,
+        worse_w,
+        better_w,
+        net_w,
+        if(
+          n_prior >= 3,
+          clamp(
+            50.0 + 15.0 * (toFloat64(net_w) - toFloat64(mean_28)) / if(
+              std_28 > 0,
+              toFloat64(std_28),
+              greatest( nullIf(avg(abs(toFloat64(net_w) - toFloat64(mean_28))) OVER w2, 0.0) * 1.253, 1.0 )
+            ),
+            0.0, 100.0
+          ),
+          50.0
+        ) AS index_100
+      FROM with_stats
+      WINDOW w2 AS (ORDER BY day ROWS BETWEEN 28 PRECEDING AND 1 PRECEDING)
+    )
+    WHERE day >= (SELECT d_from FROM params)
+    ORDER BY day
+
+
+TYPE ENDPOINT

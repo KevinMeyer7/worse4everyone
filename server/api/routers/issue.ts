@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { router, publicProcedure } from "../trpc";
-import { fetchIssueBreakdown } from "../../tinybird";
+import { fetchIssueBreakdown } from "@/server/tinybird";
 
 export const issueRouter = router({
   breakdown: publicProcedure
@@ -12,10 +12,11 @@ export const issueRouter = router({
       })
     )
     .query(async ({ input }) => {
-      if (!process.env.TB_TOKEN) {
-        throw new Error("Server missing TB_TOKEN env var");
-      }
-      const rows = await fetchIssueBreakdown(input);
+      const rows = await fetchIssueBreakdown(
+        input.model,
+        input.date_from,
+        input.date_to
+      );
       return { rows };
     }),
 });

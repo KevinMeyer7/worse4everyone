@@ -1,0 +1,85 @@
+DESCRIPTION Today’s 0–100 worseness index, 7d baseline index, and delta in points.
+
+NODE params
+SQL >
+    %
+    SELECT {{ String(model, 'GPT-5') }} AS m,
+           toDate(today())              AS d_asof,
+           toDate(today() - toIntervalDay(35)) AS d_hist_start
+
+NODE daily
+SQL >
+    %
+    -- Build 35+28 days so every prior 7 day also has a baseline
+    WITH (SELECT m FROM params) AS m,
+         (SELECT d_hist_start FROM params) AS d_hist_start,
+         toDate(addDays(d_hist_start, -28)) AS d_pad
+    SELECT
+      toDate(timestamp) AS day,
+      sumIf(weight, vibe = 'worse')  AS worse_w,
+      sumIf(weight, vibe = 'better') AS better_w,
+      sum(weight * if(vibe='worse',  1, if(vibe='better', -1, 0))) AS net_w
+    FROM
+    (
+      SELECT timestamp, model, vibe,
+             multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5,1.0)
+             * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3,0.6) AS weight
+      FROM ai_model_signals WHERE model = m AND toDate(timestamp) >= d_pad
+      UNION ALL
+      SELECT timestamp, model, vibe,
+             multiIf(severity='blocking',2.5, severity='major',1.6, severity='noticeable',1.0, severity='minor',0.5,1.0)
+             * multiIf(repro='always',1.0, repro='often',0.9, repro='sometimes',0.6, repro='once',0.3,0.6)
+      FROM ai_user_feedback WHERE model = m AND toDate(timestamp) >= d_pad
+    )
+    GROUP BY day
+    ORDER BY day
+
+NODE with_stats
+SQL >
+    %
+    SELECT
+      day, net_w,
+      avg(net_w)       OVER w AS mean_28,
+      stddevPop(net_w) OVER w AS std_28,
+      count(net_w)     OVER w AS n_prior
+    FROM daily
+    WINDOW w AS (ORDER BY day ROWS BETWEEN 28 PRECEDING AND 1 PRECEDING)
+
+NODE result
+SQL >
+    %
+    -- Compute per-day index in an inner SELECT, then aggregate in an outer SELECT.
+    SELECT
+      toFloat64(ifNull(today_idx, 50.0))          AS today_index_100,
+      toFloat64(ifNull(avg_prev7_idx, 50.0))      AS avg_prev_7d_index_100,
+      today_index_100 - avg_prev_7d_index_100     AS delta_index_pts
+    FROM
+    (
+      SELECT
+        anyLastIf(idx, day = d_asof) AS today_idx,
+        avgIf(idx, (day >= d_asof - 7) AND (day <= d_asof - 1)) AS avg_prev7_idx
+      FROM
+      (
+        SELECT
+          day,
+          -- robust scale fallback: if std=0 or null, use avg abs deviation * 1.253
+          if(
+            n_prior >= 3,
+            clamp(
+              50.0 + 15.0 * (toFloat64(net_w) - toFloat64(mean_28)) / if(
+                std_28 > 0,
+                toFloat64(std_28),
+                greatest( nullIf(avg(abs(toFloat64(net_w) - toFloat64(mean_28))) OVER w2, 0.0) * 1.253, 1.0 )
+              ),
+              0.0, 100.0
+            ),
+            50.0
+          ) AS idx
+        FROM with_stats
+        WINDOW w2 AS (ORDER BY day ROWS BETWEEN 28 PRECEDING AND 1 PRECEDING)
+      )
+      -- bring in the current as-of date
+      CROSS JOIN (SELECT d_asof FROM params)
+    )
+
+TYPE ENDPOINT

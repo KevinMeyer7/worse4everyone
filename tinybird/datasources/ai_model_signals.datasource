@@ -1,16 +1,51 @@
-# Minimal MVP Data Source for “worse or just me?”
+DESCRIPTION >
+  Implicit signals (search/navigation/telemetry) indicating “worse?”.
+  Augmented with severity/repro/vibe for weighting & analysis.
+
+TAGS raindrop, ai, signals, implicit
 
 SCHEMA >
-  `timestamp`      DateTime `json:$.timestamp` DEFAULT now(),
-  `model`          LowCardinality(String) `json:$.model`,
-  `environment`    LowCardinality(String) `json:$.environment`,
-  `issue_category` LowCardinality(String) `json:$.issue_category`,
-  `details`        String `json:$.details`,
-  `user_agent`     String `json:$.user_agent`,
-  `ip_address`     String `json:$.ip_address`,
-  `location`       LowCardinality(String) `json:$.location`
+  `timestamp`            DateTime                 `json:$.timestamp` DEFAULT now(),
+  `model`                LowCardinality(String)   `json:$.model`,
+  `environment`          LowCardinality(String)   `json:$.environment`,
+  `environment_version`  LowCardinality(String)   `json:$.environment_version` DEFAULT '',
+  `mode`                 LowCardinality(String)   `json:$.mode` DEFAULT 'text',
+  `issue_category`       LowCardinality(String)   `json:$.issue_category`,
+  `issue_tags`           Array(String)            `json:$.issue_tags[:]` DEFAULT [],
+  `severity`             LowCardinality(String)   `json:$.severity` DEFAULT 'noticeable',
+  `repro`                LowCardinality(String)   `json:$.repro` DEFAULT 'sometimes',
+  `vibe`                 LowCardinality(String)   `json:$.vibe` DEFAULT 'worse',
+  `details`              String                   `json:$.details`,
+  `user_agent`           String                   `json:$.user_agent`,
+  `ip_address`           String                   `json:$.ip_address`,
+  `location`             LowCardinality(String)   `json:$.location`,
+  `source`               LowCardinality(String)   `json:$.source` DEFAULT 'seed',
+  `latency_ms`           UInt32                   `json:$.latency_ms` DEFAULT 0,
+  `http_status`          UInt16                   `json:$.http_status` DEFAULT 0,
+  `error_code`           LowCardinality(String)   `json:$.error_code` DEFAULT ''
 
 ENGINE "MergeTree"
 ENGINE_PARTITION_KEY "toYYYYMM(timestamp)"
-ENGINE_SORTING_KEY "model, environment, timestamp"
-ENGINE_TTL "timestamp + toIntervalDay(180)"
+ENGINE_SORTING_KEY   "model, environment, timestamp"
+ENGINE_TTL           "timestamp + toIntervalDay(365)"
+
+FORWARD_QUERY >
+  SELECT
+    timestamp,
+    model,
+    environment,
+    defaultValueOfTypeName('LowCardinality(String)') AS environment_version,
+    defaultValueOfTypeName('LowCardinality(String)') AS mode,
+    issue_category,
+    defaultValueOfTypeName('Array(String)')          AS issue_tags,
+    defaultValueOfTypeName('LowCardinality(String)') AS severity,
+    defaultValueOfTypeName('LowCardinality(String)') AS repro,
+    defaultValueOfTypeName('LowCardinality(String)') AS vibe,
+    details,
+    user_agent,
+    ip_address,
+    location,
+    defaultValueOfTypeName('LowCardinality(String)') AS source,
+    defaultValueOfTypeName('UInt32')                 AS latency_ms,
+    defaultValueOfTypeName('UInt16')                 AS http_status,
+    defaultValueOfTypeName('LowCardinality(String)') AS error_code

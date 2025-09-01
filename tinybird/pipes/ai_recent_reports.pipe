@@ -1,0 +1,26 @@
+DESCRIPTION Latest reports (v1+v2) with severity, repro, vibe.
+
+NODE result
+SQL >
+    %
+    WITH {{ String(model, 'GPT-5') }} AS m
+    SELECT
+      timestamp,
+      environment,
+      issue_category,
+      left(details, 160) AS details,
+      severity,
+      repro,
+      vibe
+    FROM
+    (
+      SELECT timestamp, environment, issue_category, details, severity, repro, vibe
+      FROM ai_model_signals WHERE model = m
+      UNION ALL
+      SELECT timestamp, environment, issue_category, details, severity, repro, vibe
+      FROM ai_user_feedback WHERE model = m
+    )
+    ORDER BY timestamp DESC
+    LIMIT {{ Int32(limit, 20) }}
+
+TYPE ENDPOINT

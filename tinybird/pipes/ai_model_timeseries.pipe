@@ -1,0 +1,24 @@
+DESCRIPTION Daily report counts for a model over last N days (v1 + v2).
+
+NODE result
+SQL >
+    %
+    WITH
+      {{ String(model, 'GPT-5') }} AS m,
+      now() - toIntervalDay({{ Int32(days, 14) }}) AS t_from,
+      now() AS t_to
+    SELECT
+      toDate(timestamp) AS day,
+      count() AS reports
+    FROM
+      (
+        SELECT timestamp, model FROM ai_model_signals
+        UNION ALL
+        SELECT timestamp, model FROM ai_user_feedback
+      ) AS all_reports
+    WHERE model = m
+      AND timestamp >= t_from AND timestamp < t_to
+    GROUP BY day
+    ORDER BY day
+
+TYPE ENDPOINT
