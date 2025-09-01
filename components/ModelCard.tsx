@@ -1,4 +1,5 @@
 "use client";
+
 import Link from "next/link";
 import {
   Card,
@@ -12,93 +13,133 @@ import Sparkline, { type Point } from "@/components/Sparkline";
 import { trpc } from "@/app/lib/trpc-client";
 import { useMemo } from "react";
 
-export type ModelOverview = {
+/** Minimal row the landing passes in (don’t require weighted counts here). */
+export type ModelOverviewLike = {
   model: string;
-  today_reports: number;
-  avg_prev_7d: number;
-  pct_vs_prev_7d: number; // +/- %
-  top_issue: string | null;
+  top_issue?: string | null;
+  /** Optional: from ai_models_overview pipe. If present we’ll show it subtly. */
+  today_reports?: number; // worse-weighted today (can be fractional)
 };
 
-// A lightweight structural type to safely read the y-value regardless of
-// the server's exact key naming (reports/count/value).
-type VibeRowLike = {
-  day: string;
-} & Partial<Record<"reports" | "count" | "value", number>>;
+/** Server shapes */
+type VibePoint = { day: string; index_100: number };
+type TodayIndexSummary = {
+  today_index_100: number; // 0..100
+  avg_prev_7d_index_100: number; // 0..100
+  delta_index_pts: number; // today - baseline (points)
+};
 
-export default function ModelCard({ o }: { o: ModelOverview }) {
-  const trend: "up" | "down" | "flat" =
-    o.pct_vs_prev_7d > 5 ? "up" : o.pct_vs_prev_7d < -5 ? "down" : "flat";
+function statusFromIndex(idx?: number) {
+  if (typeof idx !== "number")
+    return { label: "Normal", tone: "normal" as const };
+  if (idx >= 60) return { label: "Worse", tone: "worse" as const };
+  if (idx <= 40) return { label: "Better", tone: "better" as const };
+  return { label: "Normal", tone: "normal" as const };
+}
 
-  const { data } = trpc.model.timeseries.useQuery({ model: o.model, days: 14 });
+function ToneBadge({
+  tone,
+  children,
+}: {
+  tone: "worse" | "normal" | "better";
+  children: React.ReactNode;
+}) {
+  const cls =
+    tone === "worse"
+      ? "bg-rose-100 text-rose-700 border-rose-200"
+      : tone === "better"
+      ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+      : "bg-slate-100 text-slate-700 border-slate-200";
+  return (
+    <Badge
+      className={`rounded-full border px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {tone === "worse" ? "⛔" : tone === "better" ? "✅" : "⏺"} {children}
+    </Badge>
+  );
+}
 
-  // Adapt the TRPC series rows to the Sparkline's Point[] shape (day/reports).
-  const sparkPoints: Point[] = useMemo(() => {
-    const rows = (data?.series ?? []) as unknown as VibeRowLike[];
-    return rows.map((r) => {
-      const y =
-        typeof r.reports === "number"
-          ? r.reports
-          : typeof r.count === "number"
-          ? r.count
-          : typeof r.value === "number"
-          ? r.value
-          : 0;
-      return { day: r.day, reports: y };
-    });
-  }, [data?.series]);
+export default function ModelCard({ o }: { o: ModelOverviewLike }) {
+  // Pull normalized index summary for the card KPIs
+  const { data: summaryData } = trpc.model.summary.useQuery(
+    { model: o.model },
+    { staleTime: 30_000, refetchOnWindowFocus: false }
+  );
+  const s = summaryData as TodayIndexSummary | undefined;
+
+  // Pull normalized index series for the sparkline
+  const { data: seriesData } = trpc.model.vibeSeries.useQuery(
+    { model: o.model, days: 14 },
+    { staleTime: 30_000, refetchOnWindowFocus: false }
+  );
+  const rows = (seriesData?.rows ?? []) as VibePoint[];
+
+  // Map index -> sparkline's expected shape
+  const points: Point[] = useMemo(
+    () => rows.map((r) => ({ day: r.day, reports: r.index_100 ?? 50 })),
+    [rows]
+  );
+
+  const todayIdx = s?.today_index_100 ?? 50;
+  const base7Idx = s?.avg_prev_7d_index_100 ?? 50;
+  const delta = s?.delta_index_pts ?? 0;
+  const status = statusFromIndex(todayIdx);
 
   return (
     <Link href={`/models/${encodeURIComponent(o.model)}`} className="block">
-      <Card className="transition hover:shadow-md">
+      <Card className="transition hover:shadow-[0_0_20px_color-mix(in_srgb,var(--foreground)_12%,transparent)]">
         <CardHeader className="pb-2">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-3">
             <CardTitle className="truncate">{o.model}</CardTitle>
-            <Badge
-              className={
-                trend === "up"
-                  ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                  : trend === "down"
-                  ? "bg-rose-50 border border-rose-200 text-rose-700"
-                  : ""
-              }
-            >
-              {trend === "up"
-                ? "Worse today"
-                : trend === "down"
-                ? "Better today"
-                : "Normal"}
-            </Badge>
+            <ToneBadge tone={status.tone}>{status.label}</ToneBadge>
           </div>
           <CardDescription>Top issue: {o.top_issue ?? "—"}</CardDescription>
         </CardHeader>
+
         <CardContent>
-          <div className="flex items-baseline gap-2">
-            <div className="text-2xl font-semibold">
-              {o.today_reports.toLocaleString()}
+          {/* KPIs — all on 0..100 index scale */}
+          <div className="mb-2 grid grid-cols-3 gap-3 text-sm">
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <div className="text-foreground/60">Today (Index)</div>
+              <div className="font-mono text-base font-semibold">
+                {Math.round(todayIdx)}
+              </div>
             </div>
-            <div className="text-xs text-slate-500">today</div>
-            <div className="ml-auto text-xs text-slate-600">
-              7d avg:{" "}
-              <span className="font-medium">{o.avg_prev_7d.toFixed(1)}</span>
-              <span
-                className={
-                  "ml-2 font-medium " +
-                  (trend === "up"
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <div className="text-foreground/60">7d baseline (Index)</div>
+              <div className="font-mono text-base font-semibold">
+                {Math.round(base7Idx)}
+              </div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <div className="text-foreground/60">Δ vs 7d (pts)</div>
+              <div
+                className={`font-mono text-base font-semibold ${
+                  delta > 0
                     ? "text-emerald-600"
-                    : trend === "down"
+                    : delta < 0
                     ? "text-rose-600"
-                    : "text-slate-600")
-                }
+                    : ""
+                }`}
               >
-                {o.pct_vs_prev_7d >= 0 ? "+" : ""}
-                {o.pct_vs_prev_7d.toFixed(1)}%
-              </span>
+                {(delta >= 0 ? "+" : "") + delta.toFixed(1)}
+              </div>
             </div>
           </div>
-          <div className="mt-2">
-            <Sparkline data={sparkPoints} />
-          </div>
+
+          {/* Sparkline of index with neutral baseline */}
+          <Sparkline data={points} baseline={50} />
+
+          {/* Optional: tiny note with worse-weighted absolute for today if provided */}
+          {typeof o.today_reports === "number" ? (
+            <div className="mt-2 text-[11px] text-foreground/60">
+              Worse-weighted today: {o.today_reports.toFixed(1)}
+            </div>
+          ) : (
+            <div className="mt-2 text-[11px] text-foreground/60">
+              Index: 0–100 (50 = normal, higher = worse).
+            </div>
+          )}
         </CardContent>
       </Card>
     </Link>

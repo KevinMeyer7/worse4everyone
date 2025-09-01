@@ -13,11 +13,11 @@ export default function Landing() {
   const { data, isLoading, isError, refetch, isFetching } =
     trpc.model.listOverview.useQuery({ limit: 8 });
 
-  // Quick aggregates
-  const totals = (data?.rows ?? []).reduce(
+  const rows = data?.rows ?? [];
+  const totals = rows.reduce(
     (acc, r) => {
-      acc.today += r.today_reports;
-      acc.avg7 += r.avg_prev_7d;
+      acc.today += r.today_count;
+      acc.avg7 += r.avg_prev_7d_count;
       return acc;
     },
     { today: 0, avg7: 0 }
@@ -25,6 +25,7 @@ export default function Landing() {
   const pct = totals.avg7
     ? ((totals.today - totals.avg7) / totals.avg7) * 100
     : 0;
+
   const trend = pct > 5 ? "up" : pct < -5 ? "down" : "flat";
 
   return (
@@ -63,10 +64,10 @@ export default function Landing() {
           {/* KPIs */}
           <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Stat
-              label="Reports today (top models)"
-              value={totals.today.toLocaleString()}
+              label="Reports today (top models)" // ✅ now literal counts
+              value={Math.round(totals.today).toLocaleString()}
               hint={`${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% vs 7d avg`}
-              trend={trend as "up" | "down" | "flat"}
+              trend={pct > 5 ? "up" : pct < -5 ? "down" : "flat"}
             />
             <Stat
               label="Models monitored"

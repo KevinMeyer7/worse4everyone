@@ -11,16 +11,29 @@ SQL >
       (d_asof - {{ Int32(top_issue_window_days, 7) }} + 1) AS issue_from
     SELECT
       bs.model,
-      bs.today_worse_w              AS today_reports,
-      bs.avg_prev_7d_w              AS avg_prev_7d,
-      if(bs.avg_prev_7d_w = 0, 0, 100.0 * (bs.today_worse_w - bs.avg_prev_7d_w) / bs.avg_prev_7d_w) AS pct_vs_prev_7d,
-      ti.top_issue_tag              AS top_issue
+
+      -- keep existing weighted fields (stable API)
+      bs.today_worse_w               AS today_reports,
+      bs.avg_prev_7d_w               AS avg_prev_7d,
+      if(bs.avg_prev_7d_w = 0, 0, 100.0 * (bs.today_worse_w - bs.avg_prev_7d_w) / bs.avg_prev_7d_w)
+        AS pct_vs_prev_7d,
+
+      -- NEW: raw counts so UI can show integers
+      bs.today_worse_count           AS today_count,
+      bs.avg_prev_7d_count           AS avg_prev_7d_count,
+
+      ti.top_issue_tag               AS top_issue
     FROM
     (
       SELECT
         model,
-        sumIf(weight, toDate(ts) = d_asof AND vibe='worse')                           AS today_worse_w,
-        toFloat64(sumIf(weight, toDate(ts) BETWEEN d_prev_from AND d_prev_to AND vibe='worse')) / 7.0 AS avg_prev_7d_w
+        sumIf(weight, toDate(ts) = d_asof AND vibe='worse')                            AS today_worse_w,
+        toFloat64(sumIf(weight, toDate(ts) BETWEEN d_prev_from AND d_prev_to AND vibe='worse')) / 7.0
+                                                                                       AS avg_prev_7d_w,
+
+        countIf(toDate(ts) = d_asof AND vibe='worse')                                  AS today_worse_count,
+        toFloat64(countIf(toDate(ts) BETWEEN d_prev_from AND d_prev_to AND vibe='worse')) / 7.0
+                                                                                       AS avg_prev_7d_count
       FROM
       (
         SELECT model, timestamp AS ts, vibe,

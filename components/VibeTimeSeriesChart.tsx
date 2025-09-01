@@ -23,6 +23,21 @@ type Point = {
 
 type Mode = "index" | "counts";
 
+const COLORS = {
+  worse: "#ef4444", // rose-500
+  better: "#22c55e", // emerald-500
+  net: "#64748b", // slate-500
+  index: "#0ea5e9", // sky-500
+  grid: "rgba(148,163,184,.25)", // slate-400 @ 25%
+};
+
+const labelForKey: Record<string, string> = {
+  worse_w: "Worse (weighted)",
+  better_w: "Better (weighted)",
+  net_w: "Net (w−b)",
+  index_100: "Index",
+};
+
 export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
   const [mode, setMode] = useState<Mode>("index");
   const rows = useMemo(() => data ?? [], [data]);
@@ -33,8 +48,8 @@ export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
       <div className="flex items-center justify-between">
         <p className="text-sm text-foreground/70">
           {mode === "counts"
-            ? "Daily weighted points (worse, better, and net)."
-            : "0–100 worseness index (50≈baseline; >50 worse than usual)."}
+            ? "Daily weighted points: red = worse, green = better, gray = net (w−b)."
+            : "0–100 worseness index (50 ≈ baseline; above is worse, below is better)."}
         </p>
         <div className="rounded-lg border border-border text-xs">
           <button
@@ -60,10 +75,11 @@ export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
         <ResponsiveContainer width="100%" height="100%">
           {mode === "index" ? (
             <LineChart data={rows}>
-              <CartesianGrid strokeDasharray="3 3" />
+              <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" />
               <XAxis dataKey="day" />
               <YAxis
                 domain={[0, 100]}
+                tickCount={6}
                 label={{
                   value: "Worseness index (0–100)",
                   angle: -90,
@@ -75,29 +91,40 @@ export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
                   },
                 }}
               />
-              <ReferenceLine y={50} strokeDasharray="4 4" />
+              <ReferenceLine
+                y={50}
+                stroke="var(--border)"
+                strokeDasharray="4 4"
+              />
               <Tooltip
-                formatter={(v: number | string) => [
-                  Number(v).toFixed(0),
-                  "Index",
-                ]}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(v, _n, payload: any) => {
+                  const key = payload?.dataKey as string;
+                  return [
+                    Number(v as number).toFixed(0),
+                    labelForKey[key] ?? "Index",
+                  ];
+                }}
               />
               <Legend />
               <Line
                 type="monotone"
                 dataKey="index_100"
                 name="Index"
-                dot={false}
+                stroke={COLORS.index}
                 strokeWidth={2}
+                dot={false}
+                connectNulls
+                isAnimationActive
               />
             </LineChart>
           ) : (
             <LineChart data={rows}>
-              <CartesianGrid strokeDasharray="3 3" />
+              <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" />
               <XAxis dataKey="day" />
               <YAxis
                 label={{
-                  value: "Weighted report points/day",
+                  value: "Weighted report points / day",
                   angle: -90,
                   position: "insideLeft",
                   style: {
@@ -107,37 +134,52 @@ export default function VibeTimeseriesChart({ data }: { data: Point[] }) {
                   },
                 }}
               />
+              <ReferenceLine
+                y={0}
+                stroke="var(--border)"
+                strokeDasharray="4 4"
+              />
               <Tooltip
-                formatter={(v: number | string, n: string) => [
-                  Number(v).toFixed(1),
-                  n === "net_w"
-                    ? "Net (worse−better)"
-                    : n === "worse_w"
-                    ? "Worse (weighted)"
-                    : "Better (weighted)",
-                ]}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(v, _n, payload: any) => {
+                  const key = payload?.dataKey as string;
+                  return [
+                    Number(v as number).toFixed(1),
+                    labelForKey[key] ?? key,
+                  ];
+                }}
               />
               <Legend />
               <Line
                 type="monotone"
                 dataKey="worse_w"
-                name="Worse (weighted)"
-                dot={false}
+                name={labelForKey.worse_w}
+                stroke={COLORS.worse}
                 strokeWidth={2}
+                dot={false}
+                connectNulls
+                isAnimationActive
               />
               <Line
                 type="monotone"
                 dataKey="better_w"
-                name="Better (weighted)"
-                dot={false}
+                name={labelForKey.better_w}
+                stroke={COLORS.better}
                 strokeWidth={2}
+                dot={false}
+                connectNulls
+                isAnimationActive
               />
               <Line
                 type="monotone"
                 dataKey="net_w"
-                name="Net (w−b)"
-                dot={false}
+                name={labelForKey.net_w}
+                stroke={COLORS.net}
                 strokeWidth={2}
+                strokeDasharray="6 4"
+                dot={false}
+                connectNulls
+                isAnimationActive
               />
             </LineChart>
           )}
